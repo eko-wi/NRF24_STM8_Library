@@ -1,4 +1,5 @@
 #include "stm8s.h"
+#include <Arduino.h>
 #ifndef MAIN_MIRF_H_
 #define MAIN_MIRF_H_
 /**
@@ -148,9 +149,11 @@
  disable interrupt caused by TX_DS.
  enable interrupt caused by MAX_RT.
  enable CRC and CRC data len=1
- mirf_CONFIG == 00101000B
+ mirf_CONFIG == 00101000B <-- change to only MASK_TX_DS
+ change: CRC can be configured to match with other libraries such as RF24 with their default of 2 byte CRC
 */
-#define mirf_CONFIG ((1 << MASK_TX_DS) | (1 << EN_CRC) | (0 << CRCO))
+//#define mirf_CONFIG ((1 << MASK_TX_DS) | (1 << EN_CRC) | (1 << CRCO))
+#define mirf_CONFIG (1 << MASK_TX_DS)
 
 /**
  * Power Amplifier level.
@@ -179,15 +182,17 @@ typedef enum {
 /**
  * CRC Length.  How big (if any) of a CRC is included.
  *
- * For use with setCRCLength()
+ * For use with setCRCLength() <-- but there is no such function? instead implement Nrf24_setCRC()
  */
+
 typedef enum {
     RF24_CRC_DISABLED = 0,
     RF24_CRC_8,
     RF24_CRC_16
 } rf24_crclength_e;
 
-void Nrf24_init();
+//void Nrf24_init();
+void Nrf24_init(GPIO_TypeDef *CEPORT, GPIO_Pin_TypeDef CENUMBER, GPIO_TypeDef *CSNPORT, GPIO_Pin_TypeDef CSNNUMBER);
 void Nrf24_config(bool *PTX);
 ErrorStatus Nrf24_setRADDR(uint8_t *adr);
 ErrorStatus Nrf24_setTADDR(uint8_t *adr);
@@ -202,6 +207,8 @@ bool Nrf24_txFifoEmpty();
 void Nrf24_getData(uint8_t *data);
 uint8_t Nrf24_getStatus();
 void Nrf24_configRegister(uint8_t reg, uint8_t value);
+void Nrf24_setChannel(uint8_t ch);
+void Nrf24_setCRC(bool useCRC, bool use2byte);
 void Nrf24_readRegister(uint8_t reg, uint8_t *value, uint8_t len);
 void Nrf24_writeRegister(uint8_t reg, uint8_t *value, uint8_t len);
 void Nrf24_powerUpRx(bool *PTX);
