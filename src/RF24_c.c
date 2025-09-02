@@ -1,6 +1,8 @@
-#include "mirf.h"
+#include "RF24_c.h"
 #include "spi.h"
-#include "delay.h"
+#include "stm8s.h"
+#include <Arduino.h>
+//#include "delay.h"
 
 /**
  ******************************************************************************
@@ -40,24 +42,34 @@
 #define NRF_PAYLOAD_SIZE 32
 
 /// Pin letter the NRF CE is connected to
-#define CE_PIN_LETTER GPIOC
+//#define CE_PIN_LETTER GPIOC
 /// Pin number the NRF CE is connected to
-#define CE_PIN_NUMBER GPIO_PIN_4
+//#define CE_PIN_NUMBER GPIO_PIN_4
 
 /// Pin letter the NRF CSN is connected to
-#define CSN_PIN_LETTER GPIOC
+//#define CSN_PIN_LETTER GPIOC
 /// Pin number the NRF CSN is connected to
-#define CSN_PIN_NUMBER GPIO_PIN_3
+//#define CSN_PIN_NUMBER GPIO_PIN_3
 
 /// @brief This function initializes the CE/CS Pins and SPI.
-void Nrf24_init() {
+//void Nrf24_init(){}
+//GPIO_Pin_Typedef can be GPIO_PIN_n or (1<<n)
+GPIO_TypeDef *CE_PIN_LETTER,*CSN_PIN_LETTER;
+GPIO_Pin_TypeDef CE_PIN_NUMBER=0,CSN_PIN_NUMBER=0;
+uint8_t _configbyte = mirf_CONFIG;
+void Nrf24_init(GPIO_TypeDef* CEPORT, GPIO_Pin_TypeDef CENUMBER, GPIO_TypeDef* CSNPORT, GPIO_Pin_TypeDef CSNNUMBER) {
+CE_PIN_LETTER=CEPORT;
+CE_PIN_NUMBER=CENUMBER;
+CSN_PIN_LETTER=CSNPORT;
+CSN_PIN_NUMBER=CSNNUMBER;
     // Set up CE pin
     GPIO_Init(
         CE_PIN_LETTER,
         CE_PIN_NUMBER,
         GPIO_MODE_OUT_PP_HIGH_FAST);
-
     GPIO_WriteLow(CE_PIN_LETTER, CE_PIN_NUMBER);
+//    GPIO_Init(CEPORT,CENUMBER,GPIO_MODE_OUT_PP_HIGH_FAST);
+//    GPIO_WriteLow(CEPORT,CENUMBER);
 
     // Set up CSN pin
     GPIO_Init(
@@ -66,6 +78,8 @@ void Nrf24_init() {
         GPIO_MODE_OUT_PP_HIGH_FAST);
 
     GPIO_WriteHigh(CSN_PIN_LETTER, CSN_PIN_NUMBER);
+//    GPIO_Init(CSNPORT,CSNNUMBER,GPIO_MODE_OUT_PP_HIGH_FAST);
+//    GPIO_WriteHigh(CSNPORT,CSNNUMBER);
 
     SPI_Init(
         SPI_FIRSTBIT_MSB,
@@ -87,13 +101,35 @@ void Nrf24_config(bool *PTX) {
     // Sets the important registers in the MiRF module and powers the module
     // in receiving mode
     // NB: channel and payload must be set now.
-    Nrf24_configRegister(RF_CH, NRF_CHANNEL_NR);       // Set RF channel
+    Nrf24_configRegister(RF_CH, NRF_CHANNEL_NR);       // Set RF channel to default
     Nrf24_configRegister(RX_PW_P0, NRF_PAYLOAD_SIZE);  // Set length of incoming payload
     Nrf24_configRegister(RX_PW_P1, NRF_PAYLOAD_SIZE);
     Nrf24_powerUpRx(PTX);  // Start receiver
     Nrf24_flushRx();
 }
 
+void Nrf24_setChannel(uint8_t ch){
+    Nrf24_configRegister(RF_CH, ch);
+}
+void Nrf24_setCRC(bool useCRC, bool use2byte){
+    //uint8_t rv;// = mirf_CONFIG;
+    Nrf24_readRegister(CONFIG, &_configbyte, 1);
+    if(useCRC){
+        _configbyte |= (1<<EN_CRC);
+        if(use2byte){
+            _configbyte |= (1 << CRCO);
+        }
+        else{
+            _configbyte &= ~(1<<CRCO);
+        }
+    }
+    else{
+        _configbyte &= ~((1<<EN_CRC) | (1<<CRCO));
+    }
+    Nrf24_configRegister(CONFIG,_configbyte); //status PWR_UP dan PRIM_RX masuk ke sini
+    //hilangkan bit-bit itu
+    _configbyte &=~((1<<PWR_UP)|(1<<PRIM_RX));
+}
 /// @brief Sets the recieving address (5) bytes!
 /// @param adr Pointer to the address.
 /// @return SUCCESS if it worked.
@@ -320,7 +356,8 @@ bool Nrf24_isSend(int timeout, bool *PTX) {
             if (i < ((F_CPU / 18 / 1000UL) * timeout)) {
                 return FALSE;
             }
-            delay_ms(1);
+            //delay_ms(1);
+            delay(1);
         }
     }
     return FALSE;
@@ -338,7 +375,8 @@ uint8_t Nrf24_getStatus() {
 void Nrf24_powerUpRx(bool *PTX) {
     *PTX = 0;
     Nrf24_ceLow();
-    Nrf24_configRegister(CONFIG, mirf_CONFIG | ((1 << PWR_UP) | (1 << PRIM_RX)));  // set ice as RX mode
+    //_configbyte berisi mask interrupt dan crc
+    Nrf24_configRegister(CONFIG, _configbyte | ((1 << PWR_UP) | (1 << PRIM_RX)));  // set ice as RX mode
     Nrf24_ceHi();
     Nrf24_configRegister(STATUS, (1 << TX_DS) | (1 << MAX_RT));  // Clear seeded interrupt and max tx number interrupt
 }
@@ -353,7 +391,7 @@ void Nrf24_flushRx() {
 /// @param PTX The boolean holding the RX/TX state of the NRF
 void Nrf24_powerUpTx(bool *PTX) {
     *PTX = 1;
-    Nrf24_configRegister(CONFIG, mirf_CONFIG | ((1 << PWR_UP) | (0 << PRIM_RX)));  // set ice as TX mode
+    Nrf24_configRegister(CONFIG, _configbyte | ((1 << PWR_UP) | (0 << PRIM_RX)));  // set ice as TX mode
     Nrf24_configRegister(STATUS, (1 << TX_DS) | (1 << MAX_RT));                    // Clear seeded interrupt and max tx number interrupt
 }
 
@@ -368,7 +406,7 @@ void Nrf24_ceLow() {
 /// @brief Power down the NRF
 void Nrf24_powerDown() {
     Nrf24_ceLow();
-    Nrf24_configRegister(CONFIG, mirf_CONFIG);
+    Nrf24_configRegister(CONFIG, _configbyte);
 }
 
 /// @brief Set TX Power
